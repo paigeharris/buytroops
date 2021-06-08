@@ -1,8 +1,0 @@
-C:\Users\Blake\source\repos\BuyTroops\BuyTroops\bin\Debug\BuyTroops.dll
-C:\Users\Blake\source\repos\BuyTroops\BuyTroops\bin\Debug\BuyTroops.pdb
-C:\Program Files (x86)\Steam\steamapps\common\Mount & Blade II Bannerlord\Modules\BuyTroops\bin\Win64_Shipping_Client\BuyTroops.dll
-C:\Program Files (x86)\Steam\steamapps\common\Mount & Blade II Bannerlord\Modules\BuyTroops\bin\Win64_Shipping_Client\BuyTroops.pdb
-C:\Users\Blake\source\repos\BuyTroops\BuyTroops\obj\Debug\BuyTroops.csproj.CoreCompileInputs.cache
-C:\Users\Blake\source\repos\BuyTroops\BuyTroops\obj\Debug\BuyTroops.csproj.CopyComplete
-C:\Users\Blake\source\repos\BuyTroops\BuyTroops\obj\Debug\BuyTroops.dll
-C:\Users\Blake\source\repos\BuyTroops\BuyTroops\obj\Debug\BuyTroops.pdb
