@@ -210,6 +210,7 @@ namespace BuyTroops
 
         private void AddRetinue(string type)
         {
+            //
             FactionTroops troops = factions[GetCulture()];
 
             if (type == "elite")
