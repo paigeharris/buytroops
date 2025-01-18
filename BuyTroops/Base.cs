@@ -73,6 +73,7 @@ namespace BuyTroops
 
         public void AddTroopsById(string id, int amount)
         {
+            amount = Convert.ToBoolean(amount) ? amount : 1;
             MobileParty.MainParty.AddElementToMemberRoster(CharacterObject.Find(id), amount, false);
 
         }
@@ -223,6 +224,14 @@ namespace BuyTroops
             {
                 AddBanditRetinue(factions["Bandits"]);
             }
+            else if (type == "fian")
+            {
+                AddTroopsById("battanian_fian_champion", 1);
+            }
+            else
+            {
+                AddTroopsById("vlandian_banner_knight", 1);
+            }
 
         }
 
@@ -238,7 +247,7 @@ namespace BuyTroops
             }
             else
             {
-                modLog("Not enough denars. " + cost + "required to recruit " + type + " retinue..");
+                modLog("Not enough denars. " + cost + " required to recruit " + type + " retinue..");
             }
         }
 
@@ -250,7 +259,8 @@ namespace BuyTroops
           (MenuCallbackArgs args) =>
           {
               args.optionLeaveType = GameMenuOption.LeaveType.DefendAction;
-              args.IsEnabled = Hero.MainHero.Gold >= 3000;
+              //args.IsEnabled = Hero.MainHero.Gold >= 3000;
+              args.IsEnabled = true;
               return true;
           },
          (MenuCallbackArgs args) => {
@@ -285,10 +295,10 @@ namespace BuyTroops
 
         private void AddMenuOptions()
         {
-
-            AddModMenuOption("Bandit Army  (30 : 3k)", "bandit", 3000);
+            AddModMenuOption("Savage (1 : 500gp)", "fian", 500);
+            AddModMenuOption("Bandit Army (30 : 3k)", "bandit", 3000);
             AddModMenuOption("Basic Retinue (50 : 10k)", "basic", 10000);
-            AddModMenuOption("Elite Cohort  (80 : 50k)", "elite", 50000);
+            AddModMenuOption("Elite Cohort (80 : 50k)", "elite", 50000);
 
             _obj.AddGameMenuOption(modMenuName, "town_enter_entr_option", "Leave",
             (MenuCallbackArgs args) =>
