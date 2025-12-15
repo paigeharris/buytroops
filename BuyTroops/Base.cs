@@ -138,13 +138,13 @@ namespace BuyTroops
 
                 if (string.IsNullOrEmpty(rawId))
                 {
-                    SafeLog("[BuyTroops] Culture rawId missing. Fallback -> " + fallback);
+                    //SafeLog("[BuyTroops] Culture rawId missing. Fallback -> " + fallback);
                     return fallback;
                 }
 
                 string id = rawId.Trim().ToLowerInvariant();
 
-                SafeLog("[BuyTroops] Culture rawId='" + rawId + "' normalized='" + id + "' source=" + source);
+                //SafeLog("[BuyTroops] Culture rawId='" + rawId + "' normalized='" + id + "' source=" + source);
 
                 switch (id)
                 {
@@ -161,13 +161,13 @@ namespace BuyTroops
                     case "nordic": return "Nords";
 
                     default:
-                        SafeLog("[BuyTroops] Unknown culture id='" + id + "'. Fallback -> " + fallback);
+                        //SafeLog("[BuyTroops] Unknown culture id='" + id + "'. Fallback -> " + fallback);
                         return fallback;
                 }
             }
             catch (Exception e)
             {
-                SafeLog("[BuyTroops] Culture exception: " + e.Message + ". Fallback -> " + fallback);
+                //SafeLog("[BuyTroops] Culture exception: " + e.Message + ". Fallback -> " + fallback);
                 return fallback;
             }
         }
@@ -332,7 +332,7 @@ namespace BuyTroops
             try
             {
                 string cultureKey = GetCultureKeySafe();
-                SafeLog("Culture: " + cultureKey);
+                //SafeLog("Culture: " + cultureKey);
 
                 FactionTroops troops = GetTroopsSafe(cultureKey);
 
