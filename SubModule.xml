@@ -1,26 +1,29 @@
- <Module>
-     <Name value="Buy Troops"/>
-     <Id value="BuyTroops"/>
-     <Version value="v1.1.6"/>
-     <SingleplayerModule value="true"/>
-     <MultiplayerModule value="false"/>
-     <DependedModules>
-         <DependedModule Id="Native"/>
-         <DependedModule Id="SandBoxCore"/>
-         <DependedModule Id="Sandbox"/>
-         <DependedModule Id="CustomBattle"/>
-         <DependedModule Id="StoryMode" />
-     </DependedModules>
-     <SubModules>
-         <SubModule>
-             <Name value="BuyTroops"/>
-             <DLLName value="BuyTroops.dll"/>
-             <SubModuleClassType value="BuyTroops.Base"/>
-             <Tags>
-                 <Tag key="DedicatedServerType" value="none" />
-                 <Tag key="IsNoRenderModeElement" value="false" />
-             </Tags>
-         </SubModule>
-     </SubModules>
-     <Xmls/>
- </Module>
+<Module>
+  <Name value="Buy Troops"/>
+  <Id value="BuyTroops"/>
+  <Version value="v1.3.10.104371"/>
+  <SingleplayerModule value="true"/>
+  <MultiplayerModule value="false"/>
+
+  <DependedModules>
+    <DependedModule Id="Native"/>
+    <DependedModule Id="SandBoxCore"/>
+    <DependedModule Id="Sandbox"/>
+    <DependedModule Id="CustomBattle"/>
+    <DependedModule Id="StoryMode"/>
+  </DependedModules>
+
+  <SubModules>
+    <SubModule>
+      <Name value="BuyTroops"/>
+      <DLLName value="BuyTroops.dll"/>
+      <SubModuleClassType value="BuyTroops.Base"/>
+      <Tags>
+        <Tag key="DedicatedServerType" value="none"/>
+        <Tag key="IsNoRenderModeElement" value="false"/>
+      </Tags>
+    </SubModule>
+  </SubModules>
+
+  <Xmls/>
+</Module>
