@@ -4,3 +4,5 @@ C:\Users\Paige\Documents\GitHub\buytroops\BuyTroops\obj\x64\Debug\BuyTroops.cspr
 C:\Users\Paige\Documents\GitHub\buytroops\BuyTroops\obj\x64\Debug\BuyTroops.csproj.CoreCompileInputs.cache
 C:\Users\Paige\Documents\GitHub\buytroops\BuyTroops\obj\x64\Debug\BuyTroops.dll
 C:\Users\Paige\Documents\GitHub\buytroops\BuyTroops\obj\x64\Debug\BuyTroops.pdb
+C:\Program Files (x86)\Steam\steamapps\common\Mount & Blade II Bannerlord\Modules\BuyTroops\bin\Win64_Shipping_Client\BuyTroops.dll
+C:\Program Files (x86)\Steam\steamapps\common\Mount & Blade II Bannerlord\Modules\BuyTroops\bin\Win64_Shipping_Client\BuyTroops.pdb
