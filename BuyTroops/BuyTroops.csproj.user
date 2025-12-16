@@ -6,4 +6,10 @@
     <StartArguments>/singleplayer _MODULES_%2aNative%2aSandBoxCore%2aCustomBattle%2aSandBox%2aStoryMode%2aBuyTroops%2a_MODULES_
 </StartArguments>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <StartProgram>C:\Program Files %28x86%29\Steam\steamapps\common\Mount &amp; Blade II Bannerlord\bin\Win64_Shipping_Client\Bannerlord.exe</StartProgram>
+    <StartArguments>/singleplayer _MODULES_%2aNative%2aSandBoxCore%2aCustomBattle%2aSandBox%2aStoryMode%2aBuyTroops%2a_MODULES_
+</StartArguments>
+    <StartAction>Program</StartAction>
+  </PropertyGroup>
 </Project>

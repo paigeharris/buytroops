@@ -1,6 +1,4 @@
-﻿// base.cs (C# 7.3 compatible)
-
-using System;
+﻿using System;
 using System.Collections.Generic;
 using TaleWorlds.Core;
 using TaleWorlds.Localization;
