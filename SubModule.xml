@@ -13,6 +13,10 @@
     <DependedModule Id="StoryMode"/>
   </DependedModules>
 
+  <OptionalDependedModules>
+    <OptionalDependedModule Id="WarSails"/>
+  </OptionalDependedModules>
+
   <SubModules>
     <SubModule>
       <Name value="BuyTroops"/>
