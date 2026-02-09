@@ -1,7 +1,7 @@
 <Module>
   <Name value="Buy Troops"/>
   <Id value="BuyTroops"/>
-  <Version value="v1.3.10.104371"/>
+  <Version value="v1.3.14.107738"/>
   <SingleplayerModule value="true"/>
   <MultiplayerModule value="false"/>
 
