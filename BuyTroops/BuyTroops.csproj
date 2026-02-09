@@ -12,6 +12,9 @@
     <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
+    <ModName>BuyTroops</ModName>
+    <GameModulesPath>..\..\..\..\..\..\Program Files %28x86%29\Steam\steamapps\common\Mount &amp; Blade II Bannerlord\Modules</GameModulesPath>
+    <DocsModulesPath>$(UserProfile)\Documents\Mount and Blade II Bannerlord\Modules</DocsModulesPath>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -205,4 +208,12 @@
     <WCFMetadata Include="Connected Services\" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <Target Name="AfterBuild">
+    <ItemGroup>
+      <_ModOutputs Include="$(TargetPath)" />
+      <_ModOutputs Include="$(TargetDir)$(TargetName).pdb" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ModOutputs)" DestinationFolder="$(GameModulesPath)\$(ModName)\bin\Win64_Shipping_Client\" />
+    <Copy SourceFiles="@(_ModOutputs)" DestinationFolder="$(DocsModulesPath)\$(ModName)\bin\Win64_Shipping_Client\" />
+  </Target>
 </Project>

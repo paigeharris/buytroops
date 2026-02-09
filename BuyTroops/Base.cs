@@ -348,7 +348,39 @@ namespace BuyTroops
                 }
                 else if (type == "fian")
                 {
-                    TryAddTroop("battanian_fian_champion", 1);
+                    if (cultureKey == "Nords")
+                    {
+                        TryAddTroop("nord_berserkr", 1);
+                    }
+                    else if (cultureKey == "Vlandia")
+                    {
+                        TryAddTroop("vlandian_banner_knight", 1);
+                    }
+                    else if (cultureKey == "Khuzait")
+                    {
+                        TryAddTroop("khuzait_khans_guard", 1);
+                    }
+                    else if (cultureKey == "Sturgia")
+                    {
+                        TryAddTroop("sturgian_line_breaker", 1);
+                    }
+                    else if (cultureKey == "Aserai")
+                    {
+                        TryAddTroop("ghilman_tier_3", 1);
+                    }
+                    else if (cultureKey == "Empire")
+                    {
+                        TryAddTroop("imperial_elite_cataphract", 1);
+                    }
+                    else
+                    {
+                        TryAddTroop("battanian_fian_champion", 1);
+                    }
+                }
+                else if (type == "sisters")
+                {
+                    TryAddTroop("sword_sisters_sister_t5", 25);
+                    TryAddTroop("sword_sisters_sister_infantry_t5", 25);
                 }
                 else
                 {
@@ -376,13 +408,27 @@ namespace BuyTroops
 
                 if (hero.Gold >= cost)
                 {
-                    SafeLog("Recruiting " + type + " retinue for " + cost + " denars.");
+                    string label = type;
+                    if (type == "fian") label = "savage";
+                    else if (type == "elite") label = "elite";
+                    else if (type == "basic") label = "basic";
+                    else if (type == "bandit") label = "bandit";
+                    else if (type == "sisters") label = "sisters";
+
+                    SafeLog("Recruiting " + label + " retinue for " + cost + " denars.");
                     hero.ChangeHeroGold(-cost);
                     AddRetinue(type);
                 }
                 else
                 {
-                    SafeLog("Not enough denars. " + cost + " required to recruit " + type + " retinue.");
+                    string label = type;
+                    if (type == "fian") label = "savage";
+                    else if (type == "elite") label = "elite";
+                    else if (type == "basic") label = "basic";
+                    else if (type == "bandit") label = "bandit";
+                    else if (type == "sisters") label = "sisters";
+
+                    SafeLog("Not enough denars. " + cost + " required to recruit " + label + " retinue.");
                 }
             }
             catch
@@ -496,6 +542,39 @@ namespace BuyTroops
                 AddMenuOptionSafe("Elite Cohort (80 : 50k)", "elite", 50000);
                 AddMenuOptionSafe("Bandit Army (30 : 3k)", "bandit", 3000);
                 AddMenuOptionSafe("Savage (1 : 500gp)", "fian", 500);
+
+                _starter.AddGameMenuOption(
+                    "castle",
+                    "buy_troops_sword_sisters",
+                    "Hire Sword Sisters (50 : 4k)",
+                    delegate (MenuCallbackArgs args)
+                    {
+                        try
+                        {
+                            args.optionLeaveType = GameMenuOption.LeaveType.DefendAction;
+                            args.IsEnabled = true;
+                            return true;
+                        }
+                        catch
+                        {
+                            return false;
+                        }
+                    },
+                    delegate (MenuCallbackArgs args)
+                    {
+                        try
+                        {
+                            PurchaseRetinue("sisters", 4000);
+                            GameMenu.SwitchToMenu("castle");
+                        }
+                        catch
+                        {
+                            // swallow
+                        }
+                    },
+                    false,
+                    6
+                );
 
                 _starter.AddGameMenuOption(
                     ModMenuName,
