@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Reflection;
 using TaleWorlds.Core;
 using TaleWorlds.Localization;
 using TaleWorlds.MountAndBlade;
@@ -44,6 +45,8 @@ namespace BuyTroops
     {
         private const string ModMenuName = "elite_retinue_mod";
         private const string DefaultFactionKey = "Empire";
+        private const string WarSailsModuleId = "WarSails";
+        private const bool EnableMenuIdDebug = false;
 
         private CampaignGameStarter _starter;
 
@@ -54,6 +57,7 @@ namespace BuyTroops
             try
             {
                 CampaignEvents.OnSessionLaunchedEvent.AddNonSerializedListener(this, new Action<CampaignGameStarter>(OnSessionLaunched));
+                CampaignEvents.GameMenuOpened.AddNonSerializedListener(this, new Action<MenuCallbackArgs>(OnMenuOpened));
             }
             catch
             {
@@ -104,6 +108,164 @@ namespace BuyTroops
             {
                 return false;
             }
+        }
+
+        private bool IsWarSailsLoadedSafe()
+        {
+            try
+            {
+                if (IsModuleLoadedSafe(WarSailsModuleId))
+                    return true;
+
+                foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    try
+                    {
+                        string asmName = asm.GetName().Name ?? "";
+                        if (asmName.IndexOf(WarSailsModuleId, StringComparison.OrdinalIgnoreCase) >= 0)
+                            return true;
+                    }
+                    catch
+                    {
+                        // ignore
+                    }
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return false;
+        }
+
+        private bool IsModuleLoadedSafe(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id)) return false;
+
+            try
+            {
+                foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    Type helper = asm.GetType("TaleWorlds.ModuleManager.ModuleHelper");
+                    if (helper == null) continue;
+
+                    string[] methodNames = new string[]
+                    {
+                        "GetLoadedModules",
+                        "GetModules",
+                        "GetModuleList",
+                        "GetModuleInfoList"
+                    };
+
+                    foreach (string methodName in methodNames)
+                    {
+                        MethodInfo mi = helper.GetMethod(methodName, BindingFlags.Public | BindingFlags.Static);
+                        if (mi == null) continue;
+                        if (mi.GetParameters().Length != 0) continue;
+
+                        object result = mi.Invoke(null, null);
+                        System.Collections.IEnumerable list = result as System.Collections.IEnumerable;
+                        if (list == null) continue;
+
+                        foreach (object item in list)
+                        {
+                            if (MatchesModuleIdSafe(item, id))
+                                return true;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return false;
+        }
+
+        private bool MatchesModuleIdSafe(object moduleInfo, string id)
+        {
+            if (moduleInfo == null || string.IsNullOrWhiteSpace(id)) return false;
+
+            try
+            {
+                Type t = moduleInfo.GetType();
+                string[] propNames = new string[]
+                {
+                    "Id",
+                    "ModuleId",
+                    "Name",
+                    "ModuleName"
+                };
+
+                foreach (string propName in propNames)
+                {
+                    PropertyInfo pi = t.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
+                    if (pi == null) continue;
+                    object val = pi.GetValue(moduleInfo, null);
+                    string s = val as string;
+                    if (!string.IsNullOrEmpty(s) && string.Equals(s, id, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+
+                string fallback = moduleInfo.ToString();
+                if (!string.IsNullOrEmpty(fallback) &&
+                    fallback.IndexOf(id, StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return false;
+        }
+
+        private bool HasPortSafe()
+        {
+            try
+            {
+                Settlement s = Settlement.CurrentSettlement;
+                if (s == null) return false;
+
+                Town t = s.Town;
+                if (t == null) return false;
+
+                Type tt = t.GetType();
+
+                PropertyInfo isPort = tt.GetProperty("IsPort", BindingFlags.Public | BindingFlags.Instance);
+                if (isPort != null && isPort.PropertyType == typeof(bool))
+                    return (bool)isPort.GetValue(t, null);
+
+                PropertyInfo hasPort = tt.GetProperty("HasPort", BindingFlags.Public | BindingFlags.Instance);
+                if (hasPort != null && hasPort.PropertyType == typeof(bool))
+                    return (bool)hasPort.GetValue(t, null);
+
+                PropertyInfo port = tt.GetProperty("Port", BindingFlags.Public | BindingFlags.Instance);
+                if (port != null)
+                {
+                    object portObj = port.GetValue(t, null);
+                    if (portObj == null) return false;
+
+                    Type pt = portObj.GetType();
+                    PropertyInfo isActive = pt.GetProperty("IsActive", BindingFlags.Public | BindingFlags.Instance);
+                    if (isActive != null && isActive.PropertyType == typeof(bool))
+                        return (bool)isActive.GetValue(portObj, null);
+
+                    PropertyInfo isEnabled = pt.GetProperty("IsEnabled", BindingFlags.Public | BindingFlags.Instance);
+                    if (isEnabled != null && isEnabled.PropertyType == typeof(bool))
+                        return (bool)isEnabled.GetValue(portObj, null);
+
+                    return true;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return false;
         }
 
         private string GetCultureKeySafe()
@@ -325,6 +487,89 @@ namespace BuyTroops
             TryAddTroop(t.wildcard1, 5);
         }
 
+        private void AddPirateRetinueSafe()
+        {
+            try
+            {
+                string cultureId = GetCultureIdSafe();
+                string pirateId = GetPirateIdForCulture(cultureId);
+                if (string.IsNullOrEmpty(pirateId))
+                    return;
+
+                TryAddTroop(pirateId, 16);
+            }
+            catch
+            {
+                // swallow
+            }
+        }
+
+        private string GetCultureIdSafe()
+        {
+            try
+            {
+                Settlement s = Settlement.CurrentSettlement;
+                if (s != null && s.Culture != null && !string.IsNullOrEmpty(s.Culture.StringId))
+                    return s.Culture.StringId;
+
+                Hero h = Hero.MainHero;
+                if (h != null && h.Culture != null && !string.IsNullOrEmpty(h.Culture.StringId))
+                    return h.Culture.StringId;
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return null;
+        }
+
+        private bool HasPirateForCurrentPortCultureSafe()
+        {
+            try
+            {
+                string cultureId = GetCultureIdSafe();
+                if (string.IsNullOrEmpty(cultureId)) return false;
+
+                string pirateId = GetPirateIdForCulture(cultureId);
+                if (string.IsNullOrEmpty(pirateId)) return false;
+
+                return CharacterObject.Find(pirateId) != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private string GetPirateIdForCulture(string cultureId)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(cultureId)) return null;
+
+                string id = cultureId.Trim().ToLowerInvariant();
+
+                switch (id)
+                {
+                    case "vlandia": return "vlandian_marine_t5";
+                    case "aserai": return "aserai_marine_t5";
+                    case "empire": return "empire_marine_t5";
+                    case "battania": return "battanian_marine_t5";
+                    case "sturgia": return "sturgian_marine_t5";
+                    case "khuzait": return "khuzait_marine_t5";
+                    case "nords": return "nord_marine_t5";
+                    case "nord": return "nord_marine_t5";
+                    case "nordic": return "nord_marine_t5";
+                    default: return null;
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         private void AddRetinue(string type)
         {
             try
@@ -345,6 +590,10 @@ namespace BuyTroops
                 else if (type == "bandit")
                 {
                     AddBanditRetinueSafe(GetTroopsSafe("Bandits"));
+                }
+                else if (type == "pirate")
+                {
+                    AddPirateRetinueSafe();
                 }
                 else if (type == "fian")
                 {
@@ -414,6 +663,7 @@ namespace BuyTroops
                     else if (type == "basic") label = "basic";
                     else if (type == "bandit") label = "bandit";
                     else if (type == "sisters") label = "sisters";
+                    else if (type == "pirate") label = "pirate";
 
                     SafeLog("Recruiting " + label + " retinue for " + cost + " denars.");
                     hero.ChangeHeroGold(-cost);
@@ -427,6 +677,7 @@ namespace BuyTroops
                     else if (type == "basic") label = "basic";
                     else if (type == "bandit") label = "bandit";
                     else if (type == "sisters") label = "sisters";
+                    else if (type == "pirate") label = "pirate";
 
                     SafeLog("Not enough denars. " + cost + " required to recruit " + label + " retinue.");
                 }
@@ -496,12 +747,119 @@ namespace BuyTroops
                 _starter = starter;
                 AddMenuSafe();
                 //DumpNordTroopIdsToFile();
+                //DumpVlandianPirateIdsToFile();
             }
             catch
             {
                 // swallow
             }
         }
+
+        private void OnMenuOpened(MenuCallbackArgs args)
+        {
+            try
+            {
+                string menuId = "(unknown)";
+
+                object ctx = GetPropertyValueSafe(args, "MenuContext");
+                object gm = GetPropertyValueSafe(ctx, "GameMenu");
+
+                string gmId = GetStringPropertySafe(gm, "StringId", "Id", "MenuId", "MenuStringId");
+                if (!string.IsNullOrEmpty(gmId))
+                    menuId = gmId;
+                else
+                {
+                    string ctxId = GetStringPropertySafe(ctx, "StringId", "Id", "MenuId", "MenuStringId");
+                    if (!string.IsNullOrEmpty(ctxId))
+                        menuId = ctxId;
+                    else
+                    {
+                        string argId = GetStringPropertySafe(args, "MenuId", "MenuStringId", "StringId", "Id");
+                        if (!string.IsNullOrEmpty(argId))
+                            menuId = argId;
+                    }
+                }
+
+                if (EnableMenuIdDebug)
+                    SafeLog("[BuyTroops] MenuId=" + menuId);
+            }
+            catch
+            {
+                // swallow
+            }
+        }
+
+        private void DumpVlandianPirateIdsToFile()
+        {
+            try
+            {
+                LogToFile("===== VLANDIAN PIRATE DUMP START =====");
+
+                foreach (CharacterObject c in CharacterObject.All)
+                {
+                    if (c == null || string.IsNullOrEmpty(c.StringId) || c.Culture == null)
+                        continue;
+
+                    if (!string.Equals(c.Culture.StringId, "vlandia", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    string id = c.StringId.ToLowerInvariant();
+                    if (id.Contains("sea") || id.Contains("pirate") || id.Contains("corsair") || id.Contains("naut") || id.Contains("sail") || id.Contains("marine"))
+                    {
+                        LogToFile(c.StringId);
+                    }
+                }
+
+                LogToFile("===== VLANDIAN PIRATE DUMP END =====");
+            }
+            catch (Exception e)
+            {
+                LogToFile("ERROR dumping vlandian pirate troops: " + e.Message);
+            }
+        }
+
+        private object GetPropertyValueSafe(object obj, string propertyName)
+        {
+            if (obj == null || string.IsNullOrEmpty(propertyName)) return null;
+
+            try
+            {
+                Type t = obj.GetType();
+                PropertyInfo pi = t.GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+                if (pi == null) return null;
+                return pi.GetValue(obj, null);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private string GetStringPropertySafe(object obj, params string[] propertyNames)
+        {
+            if (obj == null || propertyNames == null || propertyNames.Length == 0) return null;
+
+            try
+            {
+                Type t = obj.GetType();
+                foreach (string name in propertyNames)
+                {
+                    if (string.IsNullOrEmpty(name)) continue;
+                    PropertyInfo pi = t.GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+                    if (pi == null) continue;
+                    object val = pi.GetValue(obj, null);
+                    string s = val as string;
+                    if (!string.IsNullOrEmpty(s)) return s;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return null;
+        }
+
 
         private void AddMenuSafe()
         {
@@ -535,11 +893,43 @@ namespace BuyTroops
                     6
                 );
 
+                _starter.AddGameMenuOption(
+                    "port_menu",
+                    "buy_troops_pirate_port",
+                    "Hire Pirate Crew (16 : 3k)",
+                    delegate (MenuCallbackArgs args)
+                    {
+                        try
+                        {
+                            args.optionLeaveType = GameMenuOption.LeaveType.ForceToGiveTroops;
+                            return true;
+                        }
+                        catch
+                        {
+                            return false;
+                        }
+                    },
+                    delegate (MenuCallbackArgs args)
+                    {
+                        try
+                        {
+                            PurchaseRetinue("pirate", 3000);
+                            GameMenu.SwitchToMenu("port_menu");
+                        }
+                        catch
+                        {
+                            // swallow
+                        }
+                    },
+                    false,
+                    5
+                );
+
                 _starter.AddGameMenu(ModMenuName, "There is a selection of retinues willing to join your party.",
                     delegate (MenuCallbackArgs args) { });
 
                 AddMenuOptionSafe("Basic Retinue (50 : 10k)", "basic", 10000);
-                AddMenuOptionSafe("Elite Cohort (80 : 50k)", "elite", 50000);
+                AddMenuOptionSafe("Elite Cohort (80 : 30k)", "elite", 30000);
                 AddMenuOptionSafe("Bandit Army (30 : 3k)", "bandit", 3000);
                 AddMenuOptionSafe("Savage (1 : 500gp)", "fian", 500);
 
@@ -622,6 +1012,56 @@ namespace BuyTroops
                     {
                         try
                         {
+                            string cultureKey = GetCultureKeySafe();
+                            args.MenuTitle = new TextObject("Recruit " + cultureKey + " " + title);
+                            args.optionLeaveType = GameMenuOption.LeaveType.ForceToGiveTroops;
+                            return true;
+                        }
+                        catch
+                        {
+                            return false;
+                        }
+                    },
+                    delegate (MenuCallbackArgs args)
+                    {
+                        try
+                        {
+                            PurchaseRetinue(type, cost);
+                            GameMenu.SwitchToMenu("town");
+                        }
+                        catch
+                        {
+                            // swallow
+                        }
+                    },
+                    false,
+                    0,
+                    false
+                );
+            }
+            catch
+            {
+                // swallow
+            }
+        }
+
+        private void AddMenuOptionConditionalSafe(string title, string type, int cost, Func<bool> isEnabled)
+        {
+            try
+            {
+                if (_starter == null) return;
+
+                _starter.AddGameMenuOption(
+                    ModMenuName,
+                    "buy_troops_" + type,
+                    title,
+                    delegate (MenuCallbackArgs args)
+                    {
+                        try
+                        {
+                            if (isEnabled != null && !isEnabled())
+                                return false;
+
                             string cultureKey = GetCultureKeySafe();
                             args.MenuTitle = new TextObject("Recruit " + cultureKey + " " + title);
                             args.optionLeaveType = GameMenuOption.LeaveType.ForceToGiveTroops;
