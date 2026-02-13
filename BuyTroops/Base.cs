@@ -5,7 +5,9 @@ using TaleWorlds.Core;
 using TaleWorlds.Localization;
 using TaleWorlds.MountAndBlade;
 using TaleWorlds.CampaignSystem;
+using TaleWorlds.CampaignSystem.Encounters;
 using TaleWorlds.CampaignSystem.GameMenus;
+using TaleWorlds.CampaignSystem.MapEvents;
 using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Library;
@@ -19,7 +21,6 @@ namespace BuyTroops
         protected override void OnSubModuleLoad()
         {
             // intentionally empty
-            //
             //
             //
         }
@@ -37,9 +38,16 @@ namespace BuyTroops
                 _buyMenuBehavior = new AddBuyMenu();
                 starter.AddBehavior(_buyMenuBehavior);
             }
-            catch
+            catch (Exception e)
             {
-                // never crash on load
+                try
+                {
+                    InformationManager.DisplayMessage(new InformationMessage("[BuyTroops] Startup failed: " + e.GetType().Name + ": " + e.Message));
+                }
+                catch
+                {
+                    // never crash on load
+                }
             }
         }
     }
@@ -49,9 +57,17 @@ namespace BuyTroops
         private const string ModMenuName = "elite_retinue_mod";
         private const string DefaultFactionKey = "Empire";
         private const string WarSailsModuleId = "WarSails";
-        private const bool EnableMenuIdDebug = false;
+        private static readonly bool EnableMenuIdDebug = false;
 
         private CampaignGameStarter _starter;
+        private bool _disabled;
+        private string _disabledReason;
+        private DateTime _lastDisabledNoticeUtc = DateTime.MinValue;
+        private bool _contextPaused;
+        private string _contextPauseReason;
+        private DateTime _lastContextPauseNoticeUtc = DateTime.MinValue;
+        private bool _menuRegistrationComplete;
+        private const int DisableNoticeCooldownSeconds = 10;
 
         /* ===================== EVENTS ===================== */
 
@@ -61,16 +77,21 @@ namespace BuyTroops
             {
                 CampaignEvents.OnSessionLaunchedEvent.AddNonSerializedListener(this, new Action<CampaignGameStarter>(OnSessionLaunched));
                 CampaignEvents.GameMenuOpened.AddNonSerializedListener(this, new Action<MenuCallbackArgs>(OnMenuOpened));
+                CampaignEvents.OnPlayerSiegeStartedEvent.AddNonSerializedListener(this, new Action(OnPlayerSiegeStartedSafe));
+                CampaignEvents.MapEventStarted.AddNonSerializedListener(this, new Action<MapEvent, PartyBase, PartyBase>(OnMapEventStartedSafe));
+                CampaignEvents.MapEventEnded.AddNonSerializedListener(this, new Action<MapEvent>(OnMapEventEndedSafe));
+                CampaignEvents.OnSiegeEngineDestroyedEvent.AddNonSerializedListener(this, new Action<MobileParty, Settlement, BattleSideEnum, SiegeEngineType>(OnSiegeEngineDestroyedSafe));
             }
-            catch
+            catch (Exception e)
             {
-                // swallow
+                DisableMod("RegisterEvents failed.", e);
             }
         }
 
         public override void SyncData(IDataStore dataStore)
         {
             // no persistent data
+
         }
 
         /* ===================== SAFETY HELPERS ===================== */
@@ -85,6 +106,144 @@ namespace BuyTroops
             {
                 // logging should never crash
             }
+        }
+
+        private void AppendSafetyLog(string message)
+        {
+            try
+            {
+                string dir =
+                    Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments) +
+                    "\\Mount and Blade II Bannerlord\\Configs";
+                string path = dir + "\\BuyTroops_Safety.log";
+
+                System.IO.Directory.CreateDirectory(dir);
+                System.IO.File.AppendAllText(
+                    path,
+                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") +
+                    " [BuyTroops] " + (message ?? "") + Environment.NewLine
+                );
+            }
+            catch
+            {
+                // never crash for logging
+            }
+        }
+
+        private void DisableMod(string reason, Exception e = null)
+        {
+            string cleanReason = string.IsNullOrWhiteSpace(reason)
+                ? "Unknown safety shutdown reason."
+                : reason.Trim();
+
+            if (!_disabled)
+            {
+                _disabled = true;
+                _disabledReason = cleanReason;
+                SafeLog("[BuyTroops] Safety mode enabled. Menus are disabled for this session: " + _disabledReason);
+            }
+            else if (string.IsNullOrWhiteSpace(_disabledReason))
+            {
+                _disabledReason = cleanReason;
+            }
+
+            AppendSafetyLog("DISABLED: " + cleanReason);
+            if (e != null)
+                AppendSafetyLog(e.ToString());
+        }
+
+        private void NotifyDisabled(string context)
+        {
+            if (!_disabled) return;
+
+            try
+            {
+                DateTime nowUtc = DateTime.UtcNow;
+                if ((nowUtc - _lastDisabledNoticeUtc).TotalSeconds < DisableNoticeCooldownSeconds)
+                    return;
+
+                _lastDisabledNoticeUtc = nowUtc;
+                string reason = string.IsNullOrWhiteSpace(_disabledReason) ? "Unknown reason." : _disabledReason;
+                SafeLog("[BuyTroops] Blocked (" + (context ?? "unknown") + "): " + reason);
+            }
+            catch
+            {
+                // never crash for notifications
+            }
+        }
+
+        private bool IsDisabledAndNotify(string context)
+        {
+            if (!_disabled) return false;
+            NotifyDisabled(context);
+            return true;
+        }
+
+        private void SetContextPause(string reason)
+        {
+            string cleanReason = string.IsNullOrWhiteSpace(reason)
+                ? "Unsafe game state."
+                : reason.Trim();
+
+            bool changed = !_contextPaused || !string.Equals(_contextPauseReason, cleanReason, StringComparison.Ordinal);
+
+            _contextPaused = true;
+            _contextPauseReason = cleanReason;
+
+            if (changed)
+                AppendSafetyLog("PAUSED: " + cleanReason);
+        }
+
+        private void NotifyContextPaused(string context)
+        {
+            if (!_contextPaused) return;
+
+            try
+            {
+                DateTime nowUtc = DateTime.UtcNow;
+                if ((nowUtc - _lastContextPauseNoticeUtc).TotalSeconds < DisableNoticeCooldownSeconds)
+                    return;
+
+                _lastContextPauseNoticeUtc = nowUtc;
+                string reason = string.IsNullOrWhiteSpace(_contextPauseReason) ? "Unsafe game state." : _contextPauseReason;
+                SafeLog("[BuyTroops] Temporarily blocked (" + (context ?? "unknown") + "): " + reason);
+            }
+            catch
+            {
+                // never crash for notifications
+            }
+        }
+
+        private void TryResumeFromContextPause(string context)
+        {
+            if (!_contextPaused) return;
+
+            if (IsSiegeContextUnsafe(null))
+            {
+                NotifyContextPaused(context);
+                return;
+            }
+
+            _contextPaused = false;
+            _contextPauseReason = null;
+            AppendSafetyLog("RESUMED: " + (context ?? "unknown"));
+            SafeLog("[BuyTroops] Re-enabled: safe context restored.");
+        }
+
+        private bool ShouldBlockMenuAction(MenuCallbackArgs args, string context)
+        {
+            if (IsDisabledAndNotify(context))
+                return true;
+
+            if (IsSiegeContextUnsafe(args))
+            {
+                SetContextPause("Unsafe combat/siege state detected while " + context + ".");
+                NotifyContextPaused(context);
+                return true;
+            }
+
+            TryResumeFromContextPause(context);
+            return false;
         }
 
         private bool TryAddTroop(string id, int amount)
@@ -220,6 +379,9 @@ namespace BuyTroops
             catch
             {
                 // ignore
+                //
+                //
+                //
             }
 
             return false;
@@ -271,29 +433,76 @@ namespace BuyTroops
             return false;
         }
 
-        private bool IsOffensiveCastleSiegeSafe()
+        private string GetMenuIdSafe(MenuCallbackArgs args)
         {
+            if (args == null) return null;
+
             try
             {
-                object mainParty = MobileParty.MainParty;
-                if (mainParty == null)
-                    return false;
+                object ctx = GetPropertyValueSafe(args, "MenuContext");
+                object gm = GetPropertyValueSafe(ctx, "GameMenu");
 
-                object besiegedSettlement = GetPropertyValueSafe(mainParty, "BesiegedSettlement");
-                if (besiegedSettlement == null)
-                    return false;
+                string gmId = GetStringPropertySafe(gm, "StringId", "Id", "MenuId", "MenuStringId");
+                if (!string.IsNullOrEmpty(gmId))
+                    return gmId;
 
-                object isCastleObj = GetPropertyValueSafe(besiegedSettlement, "IsCastle");
-                if (isCastleObj is bool)
-                    return (bool)isCastleObj;
+                string ctxId = GetStringPropertySafe(ctx, "StringId", "Id", "MenuId", "MenuStringId");
+                if (!string.IsNullOrEmpty(ctxId))
+                    return ctxId;
 
-                // If the settlement type cannot be read, still treat as offensive siege context.
-                return true;
+                return GetStringPropertySafe(args, "MenuId", "MenuStringId", "StringId", "Id");
             }
             catch
             {
-                return false;
+                return null;
             }
+        }
+
+        private bool IsSiegeContextUnsafe(MenuCallbackArgs args)
+        {
+            try
+            {
+                MobileParty mainParty = MobileParty.MainParty;
+                if (mainParty != null)
+                {
+                    if (mainParty.SiegeEvent != null)
+                        return true;
+
+                    if (mainParty.BesiegedSettlement != null)
+                        return true;
+
+                    Settlement partySettlement = mainParty.CurrentSettlement;
+                    if (partySettlement != null && partySettlement.IsUnderSiege)
+                        return true;
+                }
+
+                Settlement currentSettlement = Settlement.CurrentSettlement;
+                if (currentSettlement != null && currentSettlement.IsUnderSiege)
+                    return true;
+
+                if (PlayerEncounter.IsActive)
+                {
+                    Settlement encounterSettlement = PlayerEncounter.EncounterSettlement;
+                    if (encounterSettlement != null && encounterSettlement.IsUnderSiege)
+                        return true;
+
+                    MapEvent battle = PlayerEncounter.Battle;
+                    if (battle != null && (battle.IsSiegeAssault || battle.IsSiegeOutside || battle.IsSiegeAmbush))
+                        return true;
+                }
+
+                string menuId = GetMenuIdSafe(args);
+                if (!string.IsNullOrEmpty(menuId) &&
+                    menuId.IndexOf("siege", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+            catch (Exception e)
+            {
+                DisableMod("Siege/context safety check failed.", e);
+                return true;
+            }
+
+            return false;
         }
 
         private string GetCultureKeySafe()
@@ -526,9 +735,9 @@ namespace BuyTroops
 
                 TryAddTroop(pirateId, 16);
             }
-            catch
+            catch (Exception e)
             {
-                // swallow
+                DisableMod("AddPirateRetinueSafe failed.", e);
             }
         }
 
@@ -639,7 +848,7 @@ namespace BuyTroops
                     }
                     else if (cultureKey == "Sturgia")
                     {
-                        TryAddTroop("sturgian_line_breaker", 1);
+                        TryAddTroop("druzhinnik_champion", 1);
                     }
                     else if (cultureKey == "Aserai")
                     {
@@ -664,9 +873,9 @@ namespace BuyTroops
                     TryAddTroop("imperial_legionary", 1);
                 }
             }
-            catch
+            catch (Exception e)
             {
-                // swallow
+                DisableMod("AddRetinue failed for type '" + (type ?? "(null)") + "'.", e);
             }
         }
 
@@ -710,9 +919,9 @@ namespace BuyTroops
                     SafeLog("Not enough denars. " + cost + " required to recruit " + label + " retinue.");
                 }
             }
-            catch
+            catch (Exception e)
             {
-                // swallow
+                DisableMod("PurchaseRetinue failed for type '" + (type ?? "(null)") + "'.", e);
             }
         }
 
@@ -738,6 +947,7 @@ namespace BuyTroops
             catch
             {
                 // never crash for logging
+                //
             }
         }
 
@@ -772,14 +982,87 @@ namespace BuyTroops
 
             try
             {
+                if (IsDisabledAndNotify("session launch"))
+                    return;
+
                 _starter = starter;
+                if (_menuRegistrationComplete)
+                    return;
+
                 AddMenuSafe();
+                _menuRegistrationComplete = true;
                 //DumpNordTroopIdsToFile();
                 //DumpVlandianPirateIdsToFile();
             }
+            catch (Exception e)
+            {
+                DisableMod("OnSessionLaunched failed.", e);
+            }
+        }
+
+        private void OnPlayerSiegeStartedSafe()
+        {
+            try
+            {
+                if (_disabled) return;
+                SetContextPause("Player entered siege flow.");
+                NotifyContextPaused("player siege started");
+            }
             catch
             {
-                // swallow
+                // never crash in safety callback
+            }
+        }
+
+        private void OnMapEventStartedSafe(MapEvent mapEvent, PartyBase attackerParty, PartyBase defenderParty)
+        {
+            try
+            {
+                if (_disabled || mapEvent == null)
+                    return;
+
+                if (mapEvent.IsPlayerMapEvent)
+                {
+                    SetContextPause("Player map event started (" + mapEvent.EventType + ").");
+                    NotifyContextPaused("map event started");
+                }
+            }
+            catch (Exception e)
+            {
+                DisableMod("OnMapEventStarted safety callback failed.", e);
+            }
+        }
+
+        private void OnMapEventEndedSafe(MapEvent mapEvent)
+        {
+            try
+            {
+                if (_disabled) return;
+                TryResumeFromContextPause("map event ended");
+            }
+            catch (Exception e)
+            {
+                DisableMod("OnMapEventEnded safety callback failed.", e);
+            }
+        }
+
+        private void OnSiegeEngineDestroyedSafe(MobileParty besiegerParty, Settlement settlement, BattleSideEnum side, SiegeEngineType siegeEngineType)
+        {
+            try
+            {
+                string settlementId = settlement != null ? settlement.StringId : "(null)";
+                string siegeEngine = siegeEngineType != null ? siegeEngineType.ToString() : "(null)";
+                AppendSafetyLog("OnSiegeEngineDestroyed: settlement=" + settlementId + ", side=" + side + ", engine=" + siegeEngine);
+
+                if (!_disabled)
+                {
+                    SetContextPause("Siege engine destruction detected.");
+                    NotifyContextPaused("siege engine destroyed");
+                }
+            }
+            catch (Exception e)
+            {
+                DisableMod("OnSiegeEngineDestroyed safety callback failed.", e);
             }
         }
 
@@ -787,33 +1070,29 @@ namespace BuyTroops
         {
             try
             {
-                string menuId = "(unknown)";
-
-                object ctx = GetPropertyValueSafe(args, "MenuContext");
-                object gm = GetPropertyValueSafe(ctx, "GameMenu");
-
-                string gmId = GetStringPropertySafe(gm, "StringId", "Id", "MenuId", "MenuStringId");
-                if (!string.IsNullOrEmpty(gmId))
-                    menuId = gmId;
-                else
+                if (_disabled)
                 {
-                    string ctxId = GetStringPropertySafe(ctx, "StringId", "Id", "MenuId", "MenuStringId");
-                    if (!string.IsNullOrEmpty(ctxId))
-                        menuId = ctxId;
-                    else
-                    {
-                        string argId = GetStringPropertySafe(args, "MenuId", "MenuStringId", "StringId", "Id");
-                        if (!string.IsNullOrEmpty(argId))
-                            menuId = argId;
-                    }
+                    NotifyDisabled("menu open");
+                    return;
                 }
+
+                if (IsSiegeContextUnsafe(args))
+                {
+                    SetContextPause("Unsafe combat/siege state detected while menu opened.");
+                    NotifyContextPaused("menu open");
+                    return;
+                }
+
+                TryResumeFromContextPause("menu open");
+
+                string menuId = GetMenuIdSafe(args) ?? "(unknown)";
 
                 if (EnableMenuIdDebug)
                     SafeLog("[BuyTroops] MenuId=" + menuId);
             }
-            catch
+            catch (Exception e)
             {
-                // swallow
+                DisableMod("OnMenuOpened failed.", e);
             }
         }
 
@@ -893,7 +1172,14 @@ namespace BuyTroops
         {
             try
             {
-                if (_starter == null) return;
+                if (IsDisabledAndNotify("add menus"))
+                    return;
+
+                if (_starter == null)
+                {
+                    DisableMod("Menu registration failed: campaign starter was null.");
+                    return;
+                }
 
                 _starter.AddGameMenuOption(
                     "town",
@@ -903,55 +1189,82 @@ namespace BuyTroops
                     {
                         try
                         {
-                            args.optionLeaveType = GameMenuOption.LeaveType.DefendAction;
+                            if (ShouldBlockMenuAction(args, "town hire retinue condition"))
+                                return false;
+
+                            args.optionLeaveType = GameMenuOption.LeaveType.Submenu;
                             args.IsEnabled = true;
                             return true;
                         }
-                        catch
+                        catch (Exception e)
                         {
+                            DisableMod("Town hire retinue condition crashed.", e);
                             return false;
                         }
                     },
                     delegate (MenuCallbackArgs args)
                     {
-                        try { GameMenu.SwitchToMenu(ModMenuName); }
-                        catch { }
+                        try
+                        {
+                            if (ShouldBlockMenuAction(args, "town hire retinue consequence"))
+                                return;
+
+                            GameMenu.SwitchToMenu(ModMenuName);
+                        }
+                        catch (Exception e)
+                        {
+                            DisableMod("Town hire retinue consequence crashed.", e);
+                        }
                     },
                     false,
                     6
                 );
 
-                _starter.AddGameMenuOption(
-                    "port_menu",
-                    "buy_troops_pirate_port",
-                    "Hire Pirate Crew (16 : 3k)",
-                    delegate (MenuCallbackArgs args)
-                    {
-                        try
+                if (IsWarSailsLoadedSafe())
+                {
+                    _starter.AddGameMenuOption(
+                        "port_menu",
+                        "buy_troops_pirate_port",
+                        "Hire Pirate Crew (16 : 3k)",
+                        delegate (MenuCallbackArgs args)
                         {
-                            args.optionLeaveType = GameMenuOption.LeaveType.ForceToGiveTroops;
-                            return true;
-                        }
-                        catch
+                            try
+                            {
+                                if (ShouldBlockMenuAction(args, "port pirate condition"))
+                                    return false;
+
+                                args.optionLeaveType = GameMenuOption.LeaveType.ForceToGiveTroops;
+                                return true;
+                            }
+                            catch (Exception e)
+                            {
+                                DisableMod("Port pirate condition crashed.", e);
+                                return false;
+                            }
+                        },
+                        delegate (MenuCallbackArgs args)
                         {
-                            return false;
-                        }
-                    },
-                    delegate (MenuCallbackArgs args)
-                    {
-                        try
-                        {
-                            PurchaseRetinue("pirate", 3000);
-                            GameMenu.SwitchToMenu("port_menu");
-                        }
-                        catch
-                        {
-                            // swallow
-                        }
-                    },
-                    false,
-                    5
-                );
+                            try
+                            {
+                                if (ShouldBlockMenuAction(args, "port pirate consequence"))
+                                    return;
+
+                                PurchaseRetinue("pirate", 3000);
+                                GameMenu.SwitchToMenu("port_menu");
+                            }
+                            catch (Exception e)
+                            {
+                                DisableMod("Port pirate consequence crashed.", e);
+                            }
+                        },
+                        false,
+                        5
+                    );
+                }
+                else
+                {
+                    AppendSafetyLog("WarSails module not detected. Skipping port menu option registration.");
+                }
 
                 _starter.AddGameMenu(ModMenuName, "There is a selection of retinues willing to join your party.",
                     delegate (MenuCallbackArgs args) { });
@@ -969,18 +1282,16 @@ namespace BuyTroops
                     {
                         try
                         {
-                            if (IsOffensiveCastleSiegeSafe())
-                            {
-                                args.IsEnabled = false;
+                            if (ShouldBlockMenuAction(args, "castle sword sisters condition"))
                                 return false;
-                            }
 
-                            args.optionLeaveType = GameMenuOption.LeaveType.DefendAction;
+                            args.optionLeaveType = GameMenuOption.LeaveType.Submenu;
                             args.IsEnabled = true;
                             return true;
                         }
-                        catch
+                        catch (Exception e)
                         {
+                            DisableMod("Castle sword sisters condition crashed.", e);
                             return false;
                         }
                     },
@@ -988,15 +1299,15 @@ namespace BuyTroops
                     {
                         try
                         {
-                            if (IsOffensiveCastleSiegeSafe())
+                            if (ShouldBlockMenuAction(args, "castle sword sisters consequence"))
                                 return;
 
                             PurchaseRetinue("sisters", 4000);
                             GameMenu.SwitchToMenu("castle");
                         }
-                        catch
+                        catch (Exception e)
                         {
-                            // swallow
+                            DisableMod("Castle sword sisters consequence crashed.", e);
                         }
                     },
                     false,
@@ -1029,9 +1340,9 @@ namespace BuyTroops
                     false
                 );
             }
-            catch
+            catch (Exception e)
             {
-                // swallow
+                DisableMod("AddMenuSafe failed while registering menu options.", e);
             }
         }
 
@@ -1039,7 +1350,14 @@ namespace BuyTroops
         {
             try
             {
-                if (_starter == null) return;
+                if (IsDisabledAndNotify("add menu option " + type))
+                    return;
+
+                if (_starter == null)
+                {
+                    DisableMod("AddMenuOptionSafe failed for '" + (type ?? "(null)") + "': starter was null.");
+                    return;
+                }
 
                 _starter.AddGameMenuOption(
                     ModMenuName,
@@ -1049,13 +1367,17 @@ namespace BuyTroops
                     {
                         try
                         {
+                            if (ShouldBlockMenuAction(args, "retinue option condition " + type))
+                                return false;
+
                             string cultureKey = GetCultureKeySafe();
                             args.MenuTitle = new TextObject("Recruit " + cultureKey + " " + title);
                             args.optionLeaveType = GameMenuOption.LeaveType.ForceToGiveTroops;
                             return true;
                         }
-                        catch
+                        catch (Exception e)
                         {
+                            DisableMod("Retinue option condition crashed for '" + (type ?? "(null)") + "'.", e);
                             return false;
                         }
                     },
@@ -1063,12 +1385,15 @@ namespace BuyTroops
                     {
                         try
                         {
+                            if (ShouldBlockMenuAction(args, "retinue option consequence " + type))
+                                return;
+
                             PurchaseRetinue(type, cost);
                             GameMenu.SwitchToMenu("town");
                         }
-                        catch
+                        catch (Exception e)
                         {
-                            // swallow
+                            DisableMod("Retinue option consequence crashed for '" + (type ?? "(null)") + "'.", e);
                         }
                     },
                     false,
@@ -1076,9 +1401,9 @@ namespace BuyTroops
                     false
                 );
             }
-            catch
+            catch (Exception e)
             {
-                // swallow
+                DisableMod("AddMenuOptionSafe failed for '" + (type ?? "(null)") + "'.", e);
             }
         }
 
@@ -1086,7 +1411,14 @@ namespace BuyTroops
         {
             try
             {
-                if (_starter == null) return;
+                if (IsDisabledAndNotify("add conditional menu option " + type))
+                    return;
+
+                if (_starter == null)
+                {
+                    DisableMod("AddMenuOptionConditionalSafe failed for '" + (type ?? "(null)") + "': starter was null.");
+                    return;
+                }
 
                 _starter.AddGameMenuOption(
                     ModMenuName,
@@ -1096,6 +1428,9 @@ namespace BuyTroops
                     {
                         try
                         {
+                            if (ShouldBlockMenuAction(args, "conditional option condition " + type))
+                                return false;
+
                             if (isEnabled != null && !isEnabled())
                                 return false;
 
@@ -1104,8 +1439,9 @@ namespace BuyTroops
                             args.optionLeaveType = GameMenuOption.LeaveType.ForceToGiveTroops;
                             return true;
                         }
-                        catch
+                        catch (Exception e)
                         {
+                            DisableMod("Conditional option condition crashed for '" + (type ?? "(null)") + "'.", e);
                             return false;
                         }
                     },
@@ -1113,12 +1449,15 @@ namespace BuyTroops
                     {
                         try
                         {
+                            if (ShouldBlockMenuAction(args, "conditional option consequence " + type))
+                                return;
+
                             PurchaseRetinue(type, cost);
                             GameMenu.SwitchToMenu("town");
                         }
-                        catch
+                        catch (Exception e)
                         {
-                            // swallow
+                            DisableMod("Conditional option consequence crashed for '" + (type ?? "(null)") + "'.", e);
                         }
                     },
                     false,
@@ -1126,9 +1465,9 @@ namespace BuyTroops
                     false
                 );
             }
-            catch
+            catch (Exception e)
             {
-                // swallow
+                DisableMod("AddMenuOptionConditionalSafe failed for '" + (type ?? "(null)") + "'.", e);
             }
         }
     }
