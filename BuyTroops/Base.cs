@@ -19,6 +19,9 @@ namespace BuyTroops
         protected override void OnSubModuleLoad()
         {
             // intentionally empty
+            //
+            //
+            //
         }
 
         protected override void OnGameStart(Game game, IGameStarter gameStarterObject)
@@ -266,6 +269,31 @@ namespace BuyTroops
             }
 
             return false;
+        }
+
+        private bool IsOffensiveCastleSiegeSafe()
+        {
+            try
+            {
+                object mainParty = MobileParty.MainParty;
+                if (mainParty == null)
+                    return false;
+
+                object besiegedSettlement = GetPropertyValueSafe(mainParty, "BesiegedSettlement");
+                if (besiegedSettlement == null)
+                    return false;
+
+                object isCastleObj = GetPropertyValueSafe(besiegedSettlement, "IsCastle");
+                if (isCastleObj is bool)
+                    return (bool)isCastleObj;
+
+                // If the settlement type cannot be read, still treat as offensive siege context.
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private string GetCultureKeySafe()
@@ -941,6 +969,12 @@ namespace BuyTroops
                     {
                         try
                         {
+                            if (IsOffensiveCastleSiegeSafe())
+                            {
+                                args.IsEnabled = false;
+                                return false;
+                            }
+
                             args.optionLeaveType = GameMenuOption.LeaveType.DefendAction;
                             args.IsEnabled = true;
                             return true;
@@ -954,6 +988,9 @@ namespace BuyTroops
                     {
                         try
                         {
+                            if (IsOffensiveCastleSiegeSafe())
+                                return;
+
                             PurchaseRetinue("sisters", 4000);
                             GameMenu.SwitchToMenu("castle");
                         }

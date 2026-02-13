@@ -1,0 +1,6 @@
+C:\Users\Paige\Documents\GitHub\buytroops\BuyTroops\bin\x64\Release\BuyTroops.dll
+C:\Users\Paige\Documents\GitHub\buytroops\BuyTroops\bin\x64\Release\BuyTroops.pdb
+C:\Users\Paige\Documents\GitHub\buytroops\BuyTroops\obj\x64\Release\BuyTroops.csproj.AssemblyReference.cache
+C:\Users\Paige\Documents\GitHub\buytroops\BuyTroops\obj\x64\Release\BuyTroops.csproj.CoreCompileInputs.cache
+C:\Users\Paige\Documents\GitHub\buytroops\BuyTroops\obj\x64\Release\BuyTroops.dll
+C:\Users\Paige\Documents\GitHub\buytroops\BuyTroops\obj\x64\Release\BuyTroops.pdb

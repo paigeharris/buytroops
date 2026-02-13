@@ -13,14 +13,17 @@
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
     <ModName>BuyTroops</ModName>
-    <GameModulesPath>..\..\..\..\..\..\Program Files %28x86%29\Steam\steamapps\common\Mount &amp; Blade II Bannerlord\Modules</GameModulesPath>
+    <GameModulesPath>..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Mount &amp; Blade II Bannerlord\Modules</GameModulesPath>
     <DocsModulesPath>$(UserProfile)\Documents\Mount and Blade II Bannerlord\Modules</DocsModulesPath>
+    <SubModuleXmlPath>$(MSBuildProjectDirectory)\..\SubModule.xml</SubModuleXmlPath>
+    <ReleaseRoot>$(MSBuildProjectDirectory)\..\releases</ReleaseRoot>
+    <PackageTempRoot>$(MSBuildProjectDirectory)\obj\release_package</PackageTempRoot>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
-    <OutputPath>..\..\..\..\..\..\Program Files %28x86%29\Steam\steamapps\common\Mount &amp; Blade II Bannerlord\Modules\BuyTroops\bin\Win64_Shipping_Client\</OutputPath>
+    <OutputPath>bin\Debug\</OutputPath>
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
@@ -35,7 +38,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
     <DebugSymbols>true</DebugSymbols>
-    <OutputPath>..\..\..\..\..\..\Program Files %28x86%29\Steam\steamapps\common\Mount &amp; Blade II Bannerlord\Modules\BuyTroops\bin\Win64_Shipping_Client\</OutputPath>
+    <OutputPath>bin\x64\Debug\</OutputPath>
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <DebugType>full</DebugType>
     <PlatformTarget>x64</PlatformTarget>
@@ -209,11 +212,34 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Target Name="AfterBuild">
+    <XmlPeek XmlInputPath="$(SubModuleXmlPath)" Query="/Module/Version/@value">
+      <Output TaskParameter="Result" PropertyName="ModuleVersion" />
+    </XmlPeek>
+    <PropertyGroup>
+      <ModuleVersion Condition="'$(ModuleVersion)' == ''">dev</ModuleVersion>
+      <GameModuleRoot>$(GameModulesPath)\$(ModName)</GameModuleRoot>
+      <DocsModuleRoot>$(DocsModulesPath)\$(ModName)</DocsModuleRoot>
+      <GameModuleBinDir>$(GameModuleRoot)\bin\Win64_Shipping_Client</GameModuleBinDir>
+      <DocsModuleBinDir>$(DocsModuleRoot)\bin\Win64_Shipping_Client</DocsModuleBinDir>
+      <PackageModuleRoot>$(PackageTempRoot)\$(ModName)</PackageModuleRoot>
+      <PackageBinDir>$(PackageModuleRoot)\bin\Win64_Shipping_Client</PackageBinDir>
+      <VersionReleaseDir>$(ReleaseRoot)\$(ModuleVersion)</VersionReleaseDir>
+      <ReleaseZipPath>$(VersionReleaseDir)\$(ModName) $(ModuleVersion).zip</ReleaseZipPath>
+    </PropertyGroup>
     <ItemGroup>
       <_ModOutputs Include="$(TargetPath)" />
       <_ModOutputs Include="$(TargetDir)$(TargetName).pdb" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
     </ItemGroup>
-    <Copy SourceFiles="@(_ModOutputs)" DestinationFolder="$(GameModulesPath)\$(ModName)\bin\Win64_Shipping_Client\" />
-    <Copy SourceFiles="@(_ModOutputs)" DestinationFolder="$(DocsModulesPath)\$(ModName)\bin\Win64_Shipping_Client\" />
+    <RemoveDir Directories="$(PackageTempRoot)" Condition="Exists('$(PackageTempRoot)')" />
+    <MakeDir Directories="$(GameModuleBinDir);$(DocsModuleBinDir);$(PackageBinDir);$(VersionReleaseDir)" />
+    <Copy SourceFiles="@(_ModOutputs)" DestinationFolder="$(GameModuleBinDir)" />
+    <Copy SourceFiles="@(_ModOutputs)" DestinationFolder="$(DocsModuleBinDir)" />
+    <Copy SourceFiles="@(_ModOutputs)" DestinationFolder="$(PackageBinDir)" />
+    <Copy SourceFiles="$(SubModuleXmlPath)" DestinationFiles="$(GameModuleRoot)\SubModule.xml" />
+    <Copy SourceFiles="$(SubModuleXmlPath)" DestinationFiles="$(DocsModuleRoot)\SubModule.xml" />
+    <Copy SourceFiles="$(SubModuleXmlPath)" DestinationFiles="$(PackageModuleRoot)\SubModule.xml" />
+    <Delete Files="$(ReleaseZipPath)" Condition="Exists('$(ReleaseZipPath)')" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Compress-Archive -Path &apos;$(PackageModuleRoot)&apos; -DestinationPath &apos;$(ReleaseZipPath)&apos; -Force&quot;" />
+    <Message Importance="High" Text="BuyTroops packaged at $(ReleaseZipPath)" />
   </Target>
 </Project>
