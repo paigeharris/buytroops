@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections;
 using System.Reflection;
 using TaleWorlds.Core;
 using TaleWorlds.Localization;
 using TaleWorlds.MountAndBlade;
 using TaleWorlds.CampaignSystem;
+using TaleWorlds.CampaignSystem.GameComponents;
 using TaleWorlds.CampaignSystem.Encounters;
 using TaleWorlds.CampaignSystem.GameMenus;
 using TaleWorlds.CampaignSystem.MapEvents;
@@ -35,6 +37,7 @@ namespace BuyTroops
                 CampaignGameStarter starter = gameStarterObject as CampaignGameStarter;
                 if (starter == null) return;
 
+                starter.AddModel(new BuyTroopsSafeHeroCreationModel());
                 _buyMenuBehavior = new AddBuyMenu();
                 starter.AddBehavior(_buyMenuBehavior);
             }
@@ -49,6 +52,106 @@ namespace BuyTroops
                     // never crash on load
                 }
             }
+        }
+    }
+
+    public class BuyTroopsSafeHeroCreationModel : DefaultHeroCreationModel
+    {
+        public override Equipment GetCivilianEquipment(Hero hero)
+        {
+            try
+            {
+                if (hero == null)
+                    return new Equipment(Equipment.EquipmentType.Civilian);
+
+                if (hero.Mother == null)
+                    return EnsureCivilianFallback(hero.CivilianEquipment, hero.BattleEquipment);
+
+                IEnumerable<MBEquipmentRoster> rosters = null;
+
+                try
+                {
+                    var model = Campaign.Current?.Models?.EquipmentSelectionModel;
+                    if (model != null)
+                        rosters = model.GetEquipmentRostersForDeliveredOffspring(hero);
+                }
+                catch
+                {
+                    // keep fallback path alive
+                }
+
+                if (rosters != null)
+                {
+                    foreach (MBEquipmentRoster roster in rosters)
+                    {
+                        Equipment civilian = TryGetCivilianFromRoster(roster);
+                        if (civilian != null)
+                            return civilian;
+                    }
+                }
+
+                return EnsureCivilianFallback(hero.CivilianEquipment, hero.BattleEquipment);
+            }
+            catch
+            {
+                return new Equipment(Equipment.EquipmentType.Civilian);
+            }
+        }
+
+        private static Equipment TryGetCivilianFromRoster(MBEquipmentRoster roster)
+        {
+            if (roster == null)
+                return null;
+
+            try
+            {
+                MBReadOnlyList<Equipment> all = roster.AllEquipments;
+                if (all != null)
+                {
+                    for (int i = 0; i < all.Count; i++)
+                    {
+                        Equipment equipment = all[i];
+                        if (equipment != null && equipment.IsCivilian)
+                            return equipment;
+                    }
+                }
+
+                Equipment fallback = roster.DefaultEquipment;
+                if (fallback != null)
+                {
+                    Equipment converted = new Equipment(Equipment.EquipmentType.Civilian);
+                    converted.FillFrom(fallback, false);
+                    return converted;
+                }
+            }
+            catch
+            {
+                // ignore and let caller fallback
+            }
+
+            return null;
+        }
+
+        private static Equipment EnsureCivilianFallback(Equipment civilian, Equipment battle)
+        {
+            try
+            {
+                if (civilian != null)
+                    return civilian;
+
+                if (battle != null)
+                {
+                    Equipment converted = new Equipment(Equipment.EquipmentType.Civilian);
+                    converted.FillFrom(battle, false);
+                    return converted;
+                }
+            }
+            catch
+            {
+                // ignore and use empty civilian equipment
+            }
+
+            return new Equipment(Equipment.EquipmentType.Civilian);
         }
     }
 
@@ -67,6 +170,8 @@ namespace BuyTroops
         private string _contextPauseReason;
         private DateTime _lastContextPauseNoticeUtc = DateTime.MinValue;
         private bool _menuRegistrationComplete;
+        private static readonly FieldInfo EquipmentRosterEquipmentsField =
+            typeof(MBEquipmentRoster).GetField("_equipments", BindingFlags.Instance | BindingFlags.NonPublic);
         private const int DisableNoticeCooldownSeconds = 10;
 
         /* ===================== EVENTS ===================== */
@@ -81,6 +186,7 @@ namespace BuyTroops
                 CampaignEvents.MapEventStarted.AddNonSerializedListener(this, new Action<MapEvent, PartyBase, PartyBase>(OnMapEventStartedSafe));
                 CampaignEvents.MapEventEnded.AddNonSerializedListener(this, new Action<MapEvent>(OnMapEventEndedSafe));
                 CampaignEvents.OnSiegeEngineDestroyedEvent.AddNonSerializedListener(this, new Action<MobileParty, Settlement, BattleSideEnum, SiegeEngineType>(OnSiegeEngineDestroyedSafe));
+                CampaignEvents.DailyTickEvent.AddNonSerializedListener(this, new Action(OnDailyTickSafe));
             }
             catch (Exception e)
             {
@@ -169,6 +275,7 @@ namespace BuyTroops
             catch
             {
                 // never crash for notifications
+                //
             }
         }
 
@@ -986,6 +1093,7 @@ namespace BuyTroops
                     return;
 
                 _starter = starter;
+                SanitizeEquipmentRostersSafe("session launch");
                 if (_menuRegistrationComplete)
                     return;
 
@@ -1044,6 +1152,99 @@ namespace BuyTroops
             {
                 DisableMod("OnMapEventEnded safety callback failed.", e);
             }
+        }
+
+        private void OnDailyTickSafe()
+        {
+            try
+            {
+                if (_disabled) return;
+                SanitizeEquipmentRostersSafe("daily tick");
+            }
+            catch (Exception e)
+            {
+                DisableMod("OnDailyTick safety callback failed.", e);
+            }
+        }
+
+        private void SanitizeEquipmentRostersSafe(string context)
+        {
+            try
+            {
+                if (EquipmentRosterEquipmentsField == null)
+                    return;
+
+                if (Campaign.Current == null)
+                    return;
+
+                MBReadOnlyList<MBEquipmentRoster> rosters = TaleWorlds.CampaignSystem.Extensions.MBEquipmentRosterExtensions.All;
+                if (rosters == null)
+                    return;
+
+                int rosterCount = 0;
+                int replacedCount = 0;
+
+                foreach (MBEquipmentRoster roster in rosters)
+                {
+                    if (roster == null)
+                        continue;
+
+                    rosterCount++;
+
+                    IList equipments = EquipmentRosterEquipmentsField.GetValue(roster) as IList;
+                    if (equipments == null || equipments.Count == 0)
+                        continue;
+
+                    Equipment fallback = BuildEquipmentFallbackSafe(roster, equipments);
+
+                    for (int i = 0; i < equipments.Count; i++)
+                    {
+                        if (equipments[i] == null)
+                        {
+                            equipments[i] = new Equipment(fallback);
+                            replacedCount++;
+                        }
+                    }
+                }
+
+                if (replacedCount > 0)
+                {
+                    string message =
+                        "Equipment roster cleanup (" + (context ?? "unknown") + "): replaced " +
+                        replacedCount + " null entries across " + rosterCount + " rosters.";
+                    AppendSafetyLog(message);
+                    SafeLog("[BuyTroops] " + message);
+                }
+            }
+            catch (Exception e)
+            {
+                DisableMod("Equipment roster cleanup failed.", e);
+            }
+        }
+
+        private Equipment BuildEquipmentFallbackSafe(MBEquipmentRoster roster, IList equipments)
+        {
+            try
+            {
+                if (equipments != null)
+                {
+                    foreach (object value in equipments)
+                    {
+                        Equipment equipment = value as Equipment;
+                        if (equipment != null)
+                            return equipment;
+                    }
+                }
+
+                if (roster != null && roster.DefaultEquipment != null)
+                    return roster.DefaultEquipment;
+            }
+            catch
+            {
+                // ignore and use hard fallback
+            }
+
+            return new Equipment(Equipment.EquipmentType.Civilian);
         }
 
         private void OnSiegeEngineDestroyedSafe(MobileParty besiegerParty, Settlement settlement, BattleSideEnum side, SiegeEngineType siegeEngineType)
