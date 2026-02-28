@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Module>
+  <Name value="PaigeFixes" />
+  <Id value="PaigeBannerlordWarsailsFixes" />
+  <Version value="v1.3.15.3" />
+  <SingleplayerModule value="true" />
+  <MultiplayerModule value="false" />
+  <Official value="false" />
+  <DefaultModule value="false" />
+  <DependedModules>
+    <DependedModule Id="Native" />
+    <DependedModule Id="SandBoxCore" />
+    <DependedModule Id="Sandbox" />
+    <DependedModule Id="StoryMode" />
+    <DependedModule Id="BirthAndDeath" />
+    <DependedModule Id="CustomBattle" />
+    <DependedModule Id="NavalDLC" />
+  </DependedModules>
+  <SubModules>
+    <SubModule>
+      <Name value="PaigeFixes" />
+      <DLLName value="PaigeFixes.dll" />
+      <SubModuleClassType value="PaigeBannerlordWarsailsFixes.SubModule" />
+      <Tags>
+        <Tag key="DedicatedServerType" value="none" />
+      </Tags>
+    </SubModule>
+  </SubModules>
+</Module>

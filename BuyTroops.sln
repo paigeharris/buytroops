@@ -5,6 +5,8 @@ VisualStudioVersion = 17.8.34330.188
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BuyTroops", "BuyTroops\BuyTroops.csproj", "{450E072E-E95B-4D41-AA95-2B3887468026}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PaigeBannerlordWarsailsFixes", "PaigeBannerlordWarsailsFixes\PaigeBannerlordWarsailsFixes.csproj", "{50E89A78-B89A-48A7-A4B2-67C7F61A15A7}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,14 @@ Global
 		{450E072E-E95B-4D41-AA95-2B3887468026}.Release|Any CPU.Build.0 = Release|Any CPU
 		{450E072E-E95B-4D41-AA95-2B3887468026}.Release|x64.ActiveCfg = Release|x64
 		{450E072E-E95B-4D41-AA95-2B3887468026}.Release|x64.Build.0 = Release|x64
+		{50E89A78-B89A-48A7-A4B2-67C7F61A15A7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{50E89A78-B89A-48A7-A4B2-67C7F61A15A7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{50E89A78-B89A-48A7-A4B2-67C7F61A15A7}.Debug|x64.ActiveCfg = Debug|x64
+		{50E89A78-B89A-48A7-A4B2-67C7F61A15A7}.Debug|x64.Build.0 = Debug|x64
+		{50E89A78-B89A-48A7-A4B2-67C7F61A15A7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{50E89A78-B89A-48A7-A4B2-67C7F61A15A7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{50E89A78-B89A-48A7-A4B2-67C7F61A15A7}.Release|x64.ActiveCfg = Release|x64
+		{50E89A78-B89A-48A7-A4B2-67C7F61A15A7}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
