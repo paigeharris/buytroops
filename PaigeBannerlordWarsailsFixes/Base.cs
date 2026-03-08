@@ -8,6 +8,7 @@ using TaleWorlds.CampaignSystem.GameComponents;
 using TaleWorlds.CampaignSystem.GameMenus;
 using TaleWorlds.CampaignSystem.MapEvents;
 using TaleWorlds.CampaignSystem.Party;
+using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Core;
 using TaleWorlds.Library;
 using TaleWorlds.Localization;
@@ -156,15 +157,15 @@ namespace PaigeBannerlordWarsailsFixes
         private const string SiegeStrategiesMenuId = "menu_siege_strategies";
         private const string LiftBlockadeText = "Lift the blockade";
         private const string DefendBlockadeText = "Defend the blockade";
-        private const string LiftBlockadeWarningSuffix = " [Known crash risk]";
+        private const string LiftBlockadeWarningSuffix = " [Known Native crash risk]";
         private const string LiftBlockadeWarningTooltipText =
-            "{=PaigeLiftBlockadeWarning}Warning: this option is known to crash in some blockade states.";
-        private const string ConsequenceBlockedNotice =
-            "[PaigeFixes] Prevented a blockade action crash. Please choose a different option.";
+            "{=PaigeLiftBlockadeWarning}Warning: Bannerlord Native/War Sails blockade action can throw NullReferenceException (GameMenuItemVM.ExecuteAction) for independent, no-ship rulers in port-siege blockade defense.";
         private const string SafetyLogName = "PaigeFixes.log";
 
         private readonly HashSet<GameMenuOption> _patchedOptions = new HashSet<GameMenuOption>();
-        private DateTime _lastConsequenceNoticeUtc = DateTime.MinValue;
+        private readonly Dictionary<GameMenuOption, string> _liftOptionOriginalTexts =
+            new Dictionary<GameMenuOption, string>();
+        private bool _liftWarningAcknowledged;
 
         private static readonly FieldInfo EquipmentRosterEquipmentsField =
             typeof(MBEquipmentRoster).GetField("_equipments", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -242,7 +243,13 @@ namespace PaigeBannerlordWarsailsFixes
                         continue;
 
                     if (isLiftOption)
-                        TryMarkLiftOptionAsWarning(option);
+                    {
+                        RememberLiftOriginalText(option);
+                        if (_liftWarningAcknowledged)
+                            RestoreLiftOptionText(option);
+                        else
+                            TryMarkLiftOptionAsWarning(option);
+                    }
 
                     PatchBlockadeOption(option, isLiftOption);
                     _patchedOptions.Add(option);
@@ -283,7 +290,10 @@ namespace PaigeBannerlordWarsailsFixes
                         if (args != null)
                         {
                             args.IsEnabled = true;
-                            args.Tooltip = new TextObject(LiftBlockadeWarningTooltipText);
+                            if (_liftWarningAcknowledged)
+                                args.Tooltip = new TextObject(string.Empty);
+                            else
+                                args.Tooltip = new TextObject(LiftBlockadeWarningTooltipText);
                         }
                     }
 
@@ -298,16 +308,22 @@ namespace PaigeBannerlordWarsailsFixes
 
             option.OnConsequence = delegate (MenuCallbackArgs args)
             {
-                try
+                if (isLiftOption && ShouldBlockLiftBlockade(args))
                 {
-                    if (originalConsequence != null)
-                        originalConsequence(args);
+                    if (!_liftWarningAcknowledged)
+                    {
+                        _liftWarningAcknowledged = true;
+                        RestoreLiftOptionText(option);
+                        AppendSafetyLog("Lift-blockade warning acknowledged by player click; restored original button label.");
+                    }
+
+                    AppendSafetyLog(
+                        "Executing warned lift-blockade consequence (native path may crash): " + optionLabel
+                    );
                 }
-                catch (Exception e)
-                {
-                    AppendSafetyLog("Blockade option consequence wrapper failed (" + optionLabel + "): " + e);
-                    NotifyConsequenceBlocked();
-                }
+
+                if (originalConsequence != null)
+                    originalConsequence(args);
             };
         }
 
@@ -315,14 +331,22 @@ namespace PaigeBannerlordWarsailsFixes
         {
             try
             {
-                // Crash has been observed repeatedly on this button path.
-                // Block whenever we detect blockade context.
-                return IsInBlockadeBattle(args);
+                if (!IsInBlockadeBattle(args))
+                    return false;
+
+                Clan playerClan = Clan.PlayerClan;
+                bool isIndependent = playerClan == null || playerClan.Kingdom == null;
+                bool hasNoShips = HasNoShipsSafe();
+                bool isPortSiege = IsPortSiegeContextSafe();
+
+                // Narrow warning to the exact repro profile:
+                // independent ruler + no ships + port-city siege blockade context.
+                return isIndependent && hasNoShips && isPortSiege;
             }
             catch (Exception e)
             {
-                AppendSafetyLog("ShouldBlockLiftBlockade failed; blocking by default: " + e.Message);
-                return true;
+                AppendSafetyLog("ShouldBlockLiftBlockade failed; not warning by default: " + e.Message);
+                return false;
             }
         }
 
@@ -380,20 +404,77 @@ namespace PaigeBannerlordWarsailsFixes
         {
             try
             {
-                string currentText = GetOptionTextSafe(option);
-                if (string.IsNullOrWhiteSpace(currentText))
+                string baseText = GetLiftOriginalText(option);
+                if (string.IsNullOrWhiteSpace(baseText))
                     return;
 
+                string currentText = GetOptionTextSafe(option);
                 if (currentText.IndexOf(LiftBlockadeWarningSuffix, StringComparison.OrdinalIgnoreCase) >= 0)
                     return;
 
-                string warnedText = currentText + LiftBlockadeWarningSuffix;
+                string warnedText = baseText + LiftBlockadeWarningSuffix;
                 if (TrySetOptionTextSafe(option, warnedText))
                     AppendSafetyLog("Updated lift-blockade label with warning text.");
             }
             catch (Exception e)
             {
                 AppendSafetyLog("TryMarkLiftOptionAsWarning failed: " + e.Message);
+            }
+        }
+
+        private void RememberLiftOriginalText(GameMenuOption option)
+        {
+            try
+            {
+                if (option == null || _liftOptionOriginalTexts.ContainsKey(option))
+                    return;
+
+                string currentText = GetOptionTextSafe(option);
+                if (string.IsNullOrWhiteSpace(currentText))
+                    return;
+
+                string normalized = currentText;
+                int suffixIndex = normalized.IndexOf(LiftBlockadeWarningSuffix, StringComparison.OrdinalIgnoreCase);
+                if (suffixIndex >= 0)
+                    normalized = normalized.Substring(0, suffixIndex);
+
+                normalized = normalized.TrimEnd();
+                if (!string.IsNullOrWhiteSpace(normalized))
+                    _liftOptionOriginalTexts[option] = normalized;
+            }
+            catch
+            {
+                // ignore option text memory failures
+            }
+        }
+
+        private string GetLiftOriginalText(GameMenuOption option)
+        {
+            string value;
+            if (option != null && _liftOptionOriginalTexts.TryGetValue(option, out value))
+                return value;
+
+            return GetOptionTextSafe(option);
+        }
+
+        private void RestoreLiftOptionText(GameMenuOption option)
+        {
+            try
+            {
+                string baseText = GetLiftOriginalText(option);
+                if (string.IsNullOrWhiteSpace(baseText))
+                    return;
+
+                string currentText = GetOptionTextSafe(option);
+                if (string.Equals(currentText, baseText, StringComparison.Ordinal))
+                    return;
+
+                if (TrySetOptionTextSafe(option, baseText))
+                    AppendSafetyLog("Restored original lift-blockade button text after warning acknowledgement.");
+            }
+            catch (Exception e)
+            {
+                AppendSafetyLog("RestoreLiftOptionText failed: " + e.Message);
             }
         }
 
@@ -503,6 +584,84 @@ namespace PaigeBannerlordWarsailsFixes
             return false;
         }
 
+        private static bool IsPortSiegeContextSafe()
+        {
+            try
+            {
+                Settlement besieged = GetPlayerBesiegedSettlementSafe();
+                if (besieged != null)
+                    return IsPortSettlementSafe(besieged);
+
+                Settlement current = Settlement.CurrentSettlement;
+                if (current != null)
+                    return IsPortSettlementSafe(current);
+            }
+            catch
+            {
+                // ignore and fail closed
+            }
+
+            return false;
+        }
+
+        private static Settlement GetPlayerBesiegedSettlementSafe()
+        {
+            try
+            {
+                Type playerSiegeType =
+                    Type.GetType("TaleWorlds.CampaignSystem.Siege.PlayerSiege, TaleWorlds.CampaignSystem") ??
+                    Type.GetType("TaleWorlds.CampaignSystem.PlayerSiege, TaleWorlds.CampaignSystem");
+                if (playerSiegeType == null)
+                    return null;
+
+                PropertyInfo playerSiegeEventProperty =
+                    playerSiegeType.GetProperty("PlayerSiegeEvent", BindingFlags.Public | BindingFlags.Static);
+                if (playerSiegeEventProperty == null)
+                    return null;
+
+                object siegeEvent = playerSiegeEventProperty.GetValue(null, null);
+                if (siegeEvent == null)
+                    return null;
+
+                PropertyInfo besiegedSettlementProperty =
+                    siegeEvent.GetType().GetProperty("BesiegedSettlement", BindingFlags.Public | BindingFlags.Instance);
+                if (besiegedSettlementProperty == null)
+                    return null;
+
+                return besiegedSettlementProperty.GetValue(siegeEvent, null) as Settlement;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static bool IsPortSettlementSafe(Settlement settlement)
+        {
+            if (settlement == null)
+                return false;
+
+            try
+            {
+                bool isTown;
+                if (!TryGetBoolMemberSafe(settlement, out isTown, "IsTown") || !isTown)
+                    return false;
+
+                bool isPort;
+                if (TryGetBoolMemberSafe(settlement, out isPort, "IsPort"))
+                    return isPort;
+
+                if (settlement.Town != null && TryGetBoolMemberSafe(settlement.Town, out isPort, "IsPort"))
+                    return isPort;
+            }
+            catch
+            {
+                // ignore and fail closed
+            }
+
+            return false;
+        }
+
         private static bool TryGetIntMemberSafe(object instance, out int value, params string[] names)
         {
             value = 0;
@@ -529,6 +688,59 @@ namespace PaigeBannerlordWarsailsFixes
                     if (TryConvertToIntSafe(field.GetValue(instance), out value))
                         return true;
                 }
+            }
+
+            return false;
+        }
+
+        private static bool TryGetBoolMemberSafe(object instance, out bool value, params string[] names)
+        {
+            value = false;
+            if (instance == null || names == null)
+                return false;
+
+            Type t = instance.GetType();
+
+            foreach (string name in names)
+            {
+                if (string.IsNullOrWhiteSpace(name))
+                    continue;
+
+                PropertyInfo property = t.GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+                if (property != null)
+                {
+                    if (TryConvertToBoolSafe(property.GetValue(instance, null), out value))
+                        return true;
+                }
+
+                FieldInfo field = t.GetField(name, BindingFlags.Public | BindingFlags.Instance);
+                if (field != null)
+                {
+                    if (TryConvertToBoolSafe(field.GetValue(instance), out value))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TryConvertToBoolSafe(object raw, out bool value)
+        {
+            value = false;
+            if (raw == null)
+                return false;
+
+            if (raw is bool)
+            {
+                value = (bool)raw;
+                return true;
+            }
+
+            bool parsed;
+            if (bool.TryParse(raw.ToString(), out parsed))
+            {
+                value = parsed;
+                return true;
             }
 
             return false;
@@ -598,23 +810,6 @@ namespace PaigeBannerlordWarsailsFixes
             catch
             {
                 return null;
-            }
-        }
-
-        private void NotifyConsequenceBlocked()
-        {
-            DateTime now = DateTime.UtcNow;
-            if ((now - _lastConsequenceNoticeUtc).TotalSeconds < 5)
-                return;
-
-            _lastConsequenceNoticeUtc = now;
-            try
-            {
-                InformationManager.DisplayMessage(new InformationMessage(ConsequenceBlockedNotice));
-            }
-            catch
-            {
-                // never crash for notifications
             }
         }
 

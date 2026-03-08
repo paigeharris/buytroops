@@ -160,6 +160,8 @@ namespace BuyTroops
         private const string ModMenuName = "elite_retinue_mod";
         private const string DefaultFactionKey = "Empire";
         private const string WarSailsModuleId = "WarSails";
+        // Flip this to true if you want verbose on-screen debug notices in a Release build.
+        private const bool ForceVerboseNotificationsInRelease = false;
         private static readonly bool EnableMenuIdDebug = false;
 
         private CampaignGameStarter _starter;
@@ -204,8 +206,20 @@ namespace BuyTroops
 
         /* ===================== SAFETY HELPERS ===================== */
 
-        private void SafeLog(string msg)
+        private static bool IsVerboseNotificationsEnabled()
         {
+#if DEBUG
+            return true;
+#else
+            return ForceVerboseNotificationsInRelease;
+#endif
+        }
+
+        private void SafeLog(string msg, bool playerFacing = false)
+        {
+            if (!playerFacing && !IsVerboseNotificationsEnabled())
+                return;
+
             try
             {
                 InformationManager.DisplayMessage(new InformationMessage(msg ?? ""));
@@ -1013,7 +1027,7 @@ namespace BuyTroops
                     else if (type == "sisters") label = "sisters";
                     else if (type == "pirate") label = "pirate";
 
-                    SafeLog("Recruiting " + label + " retinue for " + cost + " denars.");
+                    SafeLog("Recruiting " + label + " retinue for " + cost + " denars.", true);
                     hero.ChangeHeroGold(-cost);
                     AddRetinue(type);
                 }
@@ -1027,7 +1041,7 @@ namespace BuyTroops
                     else if (type == "sisters") label = "sisters";
                     else if (type == "pirate") label = "pirate";
 
-                    SafeLog("Not enough denars. " + cost + " required to recruit " + label + " retinue.");
+                    SafeLog("Not enough denars. " + cost + " required to recruit " + label + " retinue.", true);
                 }
             }
             catch (Exception e)

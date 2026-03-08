@@ -11,6 +11,7 @@ param(
     [ValidateRange(0, 99)]
     [int]$VersionRevision = 1,
 
+    [switch]$IncludeLetMeFight,
     [string]$LetMeFightRepoPath,
 
     [switch]$SkipBuild,
@@ -26,9 +27,6 @@ if (-not $repoRoot) {
 }
 
 $repoParent = Split-Path -Parent $repoRoot
-if ([string]::IsNullOrWhiteSpace($LetMeFightRepoPath)) {
-    $LetMeFightRepoPath = Join-Path $repoParent "letmefight"
-}
 
 $moduleVersion = "v$BannerlordVersion.$VersionRevision"
 Write-Host "[version] Using module version: $moduleVersion"
@@ -201,25 +199,93 @@ function Remove-StaleModuleBinary {
     }
 }
 
+function New-ReleaseZip {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ModuleName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$SubModulePath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$BinaryOutputDir,
+
+        [Parameter(Mandatory = $true)]
+        [string]$AssemblyName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PackageName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ModuleVersion
+    )
+
+    $dllPath = Join-Path $BinaryOutputDir ($AssemblyName + ".dll")
+    if (-not (Test-Path $dllPath)) {
+        throw "Missing DLL for $ModuleName at $dllPath"
+    }
+
+    $releaseDir = Join-Path (Join-Path $repoRoot "releases") $ModuleVersion
+    $stagingRoot = Join-Path $env:TEMP ("buytroops-release-" + $PackageName + "-" + [Guid]::NewGuid().ToString("N"))
+    $stagingModuleRoot = Join-Path $stagingRoot $ModuleName
+    $stagingBinDir = Join-Path $stagingModuleRoot "bin\Win64_Shipping_Client"
+    $zipPath = Join-Path $releaseDir ($PackageName + " " + $ModuleVersion + ".zip")
+    $pdbPath = Join-Path $BinaryOutputDir ($AssemblyName + ".pdb")
+
+    try {
+        New-Item -ItemType Directory -Path $stagingBinDir -Force | Out-Null
+        New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+
+        Copy-Item $SubModulePath (Join-Path $stagingModuleRoot "SubModule.xml") -Force
+        Copy-Item $dllPath (Join-Path $stagingBinDir ($AssemblyName + ".dll")) -Force
+
+        if (Test-Path $pdbPath) {
+            Copy-Item $pdbPath (Join-Path $stagingBinDir ($AssemblyName + ".pdb")) -Force
+        }
+
+        if (Test-Path $zipPath) {
+            Remove-Item $zipPath -Force
+        }
+
+        Compress-Archive -Path $stagingModuleRoot -DestinationPath $zipPath -Force
+        Write-Host "[package] $PackageName -> $zipPath"
+    }
+    finally {
+        if (Test-Path $stagingRoot) {
+            Remove-Item $stagingRoot -Recurse -Force
+        }
+    }
+}
+
 $buyTroopsSubModulePath = Join-Path $repoRoot "SubModule.xml"
 $paigeFixesSubModulePath = Join-Path $repoRoot "PaigeBannerlordWarsailsFixes\SubModule.xml"
-$letMeFightProjectPath = Join-Path $LetMeFightRepoPath "BuyTroops\LetMeFight.csproj"
-$letMeFightSubModulePath = Join-Path $LetMeFightRepoPath "SubModule.xml"
-$hasLetMeFight = (Test-Path $letMeFightProjectPath) -and (Test-Path $letMeFightSubModulePath)
+$letMeFightProjectPath = $null
+$letMeFightSubModulePath = $null
+$hasLetMeFight = $false
+
+if ($IncludeLetMeFight) {
+    if ([string]::IsNullOrWhiteSpace($LetMeFightRepoPath)) {
+        $LetMeFightRepoPath = Join-Path $repoParent "letmefight"
+    }
+
+    $letMeFightProjectPath = Join-Path $LetMeFightRepoPath "BuyTroops\LetMeFight.csproj"
+    $letMeFightSubModulePath = Join-Path $LetMeFightRepoPath "SubModule.xml"
+    $hasLetMeFight = (Test-Path $letMeFightProjectPath) -and (Test-Path $letMeFightSubModulePath)
+}
 
 Set-ModuleVersion -SubModulePath $buyTroopsSubModulePath -Version $moduleVersion
 Set-ModuleVersion -SubModulePath $paigeFixesSubModulePath -Version $moduleVersion
-if ($hasLetMeFight) {
+if ($IncludeLetMeFight -and $hasLetMeFight) {
     Set-ModuleVersion -SubModulePath $letMeFightSubModulePath -Version $moduleVersion
 }
-else {
+elseif ($IncludeLetMeFight) {
     Write-Host "[build] LetMeFight repo not found at $LetMeFightRepoPath, skipping build/deploy."
 }
 
 if (-not $SkipBuild) {
     Invoke-ProjectBuild (Join-Path $repoRoot "BuyTroops\BuyTroops.csproj")
     Invoke-ProjectBuild (Join-Path $repoRoot "PaigeBannerlordWarsailsFixes\PaigeBannerlordWarsailsFixes.csproj")
-    if ($hasLetMeFight) {
+    if ($IncludeLetMeFight -and $hasLetMeFight) {
         Invoke-ProjectBuild $letMeFightProjectPath
     }
 }
@@ -241,8 +307,15 @@ Deploy-ModuleBinary `
 Remove-StaleModuleBinary `
     -ModuleName "PaigeBannerlordWarsailsFixes" `
     -AssemblyName "PaigeBannerlordWarsailsFixes"
+New-ReleaseZip `
+    -ModuleName "PaigeBannerlordWarsailsFixes" `
+    -SubModulePath $paigeFixesSubModulePath `
+    -BinaryOutputDir $paigeFixesOut `
+    -AssemblyName "PaigeFixes" `
+    -PackageName "PaigeFixes" `
+    -ModuleVersion $moduleVersion
 
-if ($hasLetMeFight) {
+if ($IncludeLetMeFight -and $hasLetMeFight) {
     $letMeFightOut = Resolve-LetMeFightOutputDir -LetMeFightRoot $LetMeFightRepoPath
     Deploy-ModuleBinary `
         -ModuleName "LetMeFight" `
