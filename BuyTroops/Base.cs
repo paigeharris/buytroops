@@ -160,15 +160,19 @@ namespace BuyTroops
         private const string ModMenuName = "elite_retinue_mod";
         private const string DefaultFactionKey = "Empire";
         private const string WarSailsModuleId = "WarSails";
+        // Flip this to true if you want verbose on-screen debug notices in a Release build.
+        private const bool ForceVerboseNotificationsInRelease = false;
         private static readonly bool EnableMenuIdDebug = false;
 
         private CampaignGameStarter _starter;
         private bool _disabled;
         private string _disabledReason;
         private DateTime _lastDisabledNoticeUtc = DateTime.MinValue;
+        private bool _disabledNoticeShown;
         private bool _contextPaused;
         private string _contextPauseReason;
         private DateTime _lastContextPauseNoticeUtc = DateTime.MinValue;
+        private bool _contextPauseNoticeShown;
         private bool _menuRegistrationComplete;
         private static readonly FieldInfo EquipmentRosterEquipmentsField =
             typeof(MBEquipmentRoster).GetField("_equipments", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -202,8 +206,20 @@ namespace BuyTroops
 
         /* ===================== SAFETY HELPERS ===================== */
 
-        private void SafeLog(string msg)
+        private static bool IsVerboseNotificationsEnabled()
         {
+#if DEBUG
+            return true;
+#else
+            return ForceVerboseNotificationsInRelease;
+#endif
+        }
+
+        private void SafeLog(string msg, bool playerFacing = false)
+        {
+            if (!playerFacing && !IsVerboseNotificationsEnabled())
+                return;
+
             try
             {
                 InformationManager.DisplayMessage(new InformationMessage(msg ?? ""));
@@ -246,6 +262,7 @@ namespace BuyTroops
             {
                 _disabled = true;
                 _disabledReason = cleanReason;
+                _disabledNoticeShown = false;
                 SafeLog("[BuyTroops] Safety mode enabled. Menus are disabled for this session: " + _disabledReason);
             }
             else if (string.IsNullOrWhiteSpace(_disabledReason))
@@ -261,14 +278,12 @@ namespace BuyTroops
         private void NotifyDisabled(string context)
         {
             if (!_disabled) return;
+            if (_disabledNoticeShown) return;
 
             try
             {
-                DateTime nowUtc = DateTime.UtcNow;
-                if ((nowUtc - _lastDisabledNoticeUtc).TotalSeconds < DisableNoticeCooldownSeconds)
-                    return;
-
-                _lastDisabledNoticeUtc = nowUtc;
+                _disabledNoticeShown = true;
+                _lastDisabledNoticeUtc = DateTime.UtcNow;
                 string reason = string.IsNullOrWhiteSpace(_disabledReason) ? "Unknown reason." : _disabledReason;
                 SafeLog("[BuyTroops] Blocked (" + (context ?? "unknown") + "): " + reason);
             }
@@ -298,20 +313,22 @@ namespace BuyTroops
             _contextPauseReason = cleanReason;
 
             if (changed)
+            {
+                _contextPauseNoticeShown = false;
+                _lastContextPauseNoticeUtc = DateTime.MinValue;
                 AppendSafetyLog("PAUSED: " + cleanReason);
+            }
         }
 
         private void NotifyContextPaused(string context)
         {
             if (!_contextPaused) return;
+            if (_contextPauseNoticeShown) return;
 
             try
             {
-                DateTime nowUtc = DateTime.UtcNow;
-                if ((nowUtc - _lastContextPauseNoticeUtc).TotalSeconds < DisableNoticeCooldownSeconds)
-                    return;
-
-                _lastContextPauseNoticeUtc = nowUtc;
+                _contextPauseNoticeShown = true;
+                _lastContextPauseNoticeUtc = DateTime.UtcNow;
                 string reason = string.IsNullOrWhiteSpace(_contextPauseReason) ? "Unsafe game state." : _contextPauseReason;
                 SafeLog("[BuyTroops] Temporarily blocked (" + (context ?? "unknown") + "): " + reason);
             }
@@ -333,8 +350,9 @@ namespace BuyTroops
 
             _contextPaused = false;
             _contextPauseReason = null;
+            _contextPauseNoticeShown = false;
+            _lastContextPauseNoticeUtc = DateTime.MinValue;
             AppendSafetyLog("RESUMED: " + (context ?? "unknown"));
-            SafeLog("[BuyTroops] Re-enabled: safe context restored.");
         }
 
         private bool ShouldBlockMenuAction(MenuCallbackArgs args, string context)
@@ -1009,7 +1027,7 @@ namespace BuyTroops
                     else if (type == "sisters") label = "sisters";
                     else if (type == "pirate") label = "pirate";
 
-                    SafeLog("Recruiting " + label + " retinue for " + cost + " denars.");
+                    SafeLog("Recruiting " + label + " retinue for " + cost + " denars.", true);
                     hero.ChangeHeroGold(-cost);
                     AddRetinue(type);
                 }
@@ -1023,7 +1041,7 @@ namespace BuyTroops
                     else if (type == "sisters") label = "sisters";
                     else if (type == "pirate") label = "pirate";
 
-                    SafeLog("Not enough denars. " + cost + " required to recruit " + label + " retinue.");
+                    SafeLog("Not enough denars. " + cost + " required to recruit " + label + " retinue.", true);
                 }
             }
             catch (Exception e)
